@@ -1,6 +1,7 @@
 //import required packages 
 const express = require('express'); //USED to make http request
 const sqlite3 = require('sqlite3'); //used for database(serverless)
+const bcrypt = require('bcrypt');
 
 const app = express();
 const PORT = 3000;
@@ -15,10 +16,16 @@ const db = new sqlite3.Database('./mydb.sqlite', (err) => {
 
 // Create a simple "users" table
 db.run(`
-  CREATE TABLE IF NOT EXISTS users (
+  CREATE TABLE IF NOT EXISTS student (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sname TEXT,
+    dob TEXT,
+    sclass TEXT,
+    saddress TEXT,
+    g_phone TEXT,
     username TEXT,
     password TEXT
-  )
+  );
 `);
 
 
@@ -28,21 +35,29 @@ app.get('/', (req, res) => {
   res.send('Hello from the API!');
 });
 
-// API: Get all users
-app.get('/api/users', (req, res) => {
-  db.all('SELECT * FROM users', [], (err, rows) => {
+// API: Get get student
+app.get('/api/get/student', (req, res) => {
+  db.all('SELECT * FROM student', [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
 });
 
-// API: Add a user
-app.post('/api/register', (req, res) => {
-  const { username, password } = req.body;
-  const query = `INSERT INTO users (username, password) VALUES (?, ?)`;
-  db.run(query, [username, password], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ username, password });
+// API: Add student
+app.post('/api/add/student', (req, res) => {
+  const { sname, dob, sclass, saddress, g_phone, username, password } = req.body;
+
+  bcrypt.hash(password, 10, (err, hash_password) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to hash password' });
+    }
+    
+    const query = `INSERT INTO student (sname, dob, sclass, saddress, g_phone, username, password) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    db.run(query, [sname, dob, sclass, saddress, g_phone, username, hash_password], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      var message = 'User registered successfully';
+      res.json({ message, sname, dob, sclass, saddress, g_phone, username, hash_password });
+    });
   });
 });
 
@@ -54,11 +69,42 @@ app.post('/api/login', (req, res) => {
     return res.status(400).json({ message: 'Username and password are required.' });
   }
 
-  if (username === USER.username && password === USER.password) {
-    return res.status(200).json({ message: 'Login successful!' });
-  } else {
-    return res.status(401).json({ message: 'Invalid credentials.' });
-  }
+  db.get(`SELECT * FROM student WHERE username = ?`, [username], async (err, student) => {
+    
+    //check for errors
+    if (err) {
+      return res.status(401).json({ error: err.message });
+    } 
+
+    //check is username exists
+    if (!student){
+      return res.status(401).json({ error: "Username do not exists" });
+    }
+    return res.status(401).json({ student });
+    //check if password matches
+    // if(student.password == password){
+    //   return res.status(200).json({ student });
+    // } else {
+    //   return res.status(401).json({ error: "Invalid Password" });
+    // }
+
+    //check if hash password matches
+    bcrypt.compare(password, student.password, (err, result) => {
+      if (err) {
+        console.error('Bcrypt compare error:', err);
+        return res.status(500).json({ error: 'Internal error' });
+      }
+
+      if (!result) {
+        return res.status(401).json({ error: 'Invalid password' });
+      }
+
+      // Password is correct
+      // req.session.studentId = student.id;
+      return res.json({ student });
+    });
+
+  });
 });
 
 
